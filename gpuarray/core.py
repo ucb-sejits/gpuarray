@@ -1,10 +1,11 @@
 import numpy as np
 import pycl
-
+import collections
 
 class MappedArray(np.ndarray):
 
     queues = {}
+    dirty = collections.defaultdict(bool)
 
     def __allocate_buffer(self, device):
         queue = self.__get_queue(device)
@@ -44,8 +45,70 @@ class MappedArray(np.ndarray):
     def __array_finalize__(self, obj):
         self.__buffers = {}
         self.__waiting = []
+        self.dirty['host'] = True
 
     def wait(self):
         for evt in self.__waiting:
             evt.wait()
         del self.__waiting[:]
+
+    def __setitem__(self, key, value):
+        self.dirty['host'] = True
+        super(MappedArray, self).__setitem__(key, value)
+
+    def __setslice__(self, i, j, sequence):
+        self.dirty['host'] = True
+        super(MappedArray, self).__setitem__(i, j, sequence)
+
+    def __iadd__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__iadd__(other)
+
+    def __isub__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__isub__(other)
+
+    def __imul__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__imul__(other)
+
+    def __idiv__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__idiv__(other)
+
+    def __iand__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__iand__(other)
+
+    def __ior__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__ior__(other)
+
+    def __ipow__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__ipow__(other)
+
+    def __ixor__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__ixor__(other)
+
+    def __ifloordiv__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__ifloordiv__(other)
+
+    def __itruediv__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__itruediv__(other)
+
+    def __imod__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__imod__(other)
+
+    def __ilshift__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__ilshift__(other)
+
+    def __irshift__(self, other):
+        self.dirty['host'] = True
+        return super(MappedArray, self).__irshift__(other)
+
