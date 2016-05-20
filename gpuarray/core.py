@@ -1,51 +1,112 @@
 import numpy as np
 import pycl
 import collections
+import ctree
+
+
+def get_gpu():
+        name = None
+        if ctree.CONFIG.has_option("opencl", "gpu"):
+            name = ctree.CONFIG.get("opencl", "gpu")
+        if name is None:
+            return pycl.clGetDeviceIDs(device_type=pycl.CL_DEVICE_TYPE_GPU)[0]
+        else:
+            for gpu in pycl.clGetDeviceIDs():
+                if gpu.name == name:
+                    return gpu
 
 class MappedArray(np.ndarray):
 
     queues = {}
-    dirty = collections.defaultdict(bool)
+    existing = {}
 
-    def __allocate_buffer(self, device):
+
+    @staticmethod
+    def hash_array(arr):
+        return arr.__array_interface__['data']
+
+    def __allocate_buffer(self, device=get_gpu()):
         queue = self.__get_queue(device)
-        self.__buffers[device], evt = pycl.buffer_from_ndarray(queue, self, self.__buffers.get(device))
+        self.__buffers[device.value], evt = pycl.buffer_from_ndarray(queue, self, self.get_buffer(device))
         return evt
 
-    @classmethod
-    def __get_queue(cls, device):
-        if device in cls.queues:
-            return cls.queues[device]
-        if device:
-            ctx = pycl.clCreateContext(devices=[device])
+    def __is_dirty(self, device=get_gpu()):
+        if hasattr(device, "value"):
+            return self.dirty[device.value]
+        return self.dirty[device]
+
+    def __copied(self, device=get_gpu()):
+        if hasattr(device, "value"):
+            return self.copied[device.value]
+        return self.copied[device]
+
+    def __set_copied(self, device=get_gpu(), val=True):
+        if hasattr(device, "value"):
+            self.copied[device.value] = val
         else:
-            ctx = pycl.clCreateContextFromType(device_type=pycl.cl_device_type.CL_DEVICE_TYPE_GPU)
+            self.copied[device] = val
+
+    def set_dirty(self, device=get_gpu(), dirty=True):
+        if hasattr(device, "value"):
+            self.dirty[device.value] = dirty
+        else:
+            self.dirty[device] = dirty
+
+    @classmethod
+    def __get_queue(cls, device=get_gpu()):
+        if device.value in cls.queues:
+            return cls.queues[device.value]
+        else:
+            ctx = pycl.clCreateContext(devices=[device])
         queue = pycl.clCreateCommandQueue(context=ctx, device=device)
-        cls.queues[device] = queue
+        cls.queues[device.value] = queue
         return queue
 
-
-    def device_to_gpu(self, device=None, wait=True):
+    def device_to_gpu(self, device=get_gpu(), wait=True):
+        if self.__copied(device) and not self.__is_dirty(device):
+            # print("Skipping copy")
+            return
         evt = self.__allocate_buffer(device)
         if wait:
             evt.wait()
         else:
             self.__waiting.append(evt)
 
-    def gpu_to_device(self, device=None, wait=True):
-        _, evt = pycl.buffer_to_ndarray(self.__get_queue(device), self.__buffers[device])
+        self.set_dirty(device, False)
+        self.__set_copied(device, True)
+
+
+    def gpu_to_device(self, device=get_gpu(), wait=True):
+        if not self.__is_dirty("host"):
+            return
+        _, evt = pycl.buffer_to_ndarray(self.__get_queue(device), self.__buffers[device.value])
         if wait:
             evt.wait()
         else:
             self.__waiting.append(evt)
 
-    def get_buffer(self, device):
-        return self.__buffers.get(device)
+        self.set_dirty('host', False)
+
+    def get_buffer(self, device=get_gpu()):
+        return self.__buffers.get(device.value)
 
     def __array_finalize__(self, obj):
-        self.__buffers = {}
-        self.__waiting = []
-        self.dirty['host'] = True
+        if self.hash_array(obj) in self.existing:
+            old = self.existing[self.hash_array(obj)]
+            self.dirty = old.dirty
+            self.copied = old.copied
+            self.__buffers = old.__buffers
+            self.__waiting = old.__waiting
+            return
+
+        elif not hasattr(self, "dirty"):
+            self.__buffers = {}
+            self.__waiting = []
+            self.dirty = collections.defaultdict(lambda: True)
+            self.copied = collections.defaultdict(bool)
+            self.dirty['host'] = True
+            self.copied['host'] = True
+            self.existing[self.hash_array(obj)] = self
 
     def wait(self):
         for evt in self.__waiting:
@@ -58,7 +119,7 @@ class MappedArray(np.ndarray):
 
     def __setslice__(self, i, j, sequence):
         self.dirty['host'] = True
-        super(MappedArray, self).__setitem__(i, j, sequence)
+        super(MappedArray, self).__setslice__(i, j, sequence)
 
     def __iadd__(self, other):
         self.dirty['host'] = True
@@ -112,3 +173,14 @@ class MappedArray(np.ndarray):
         self.dirty['host'] = True
         return super(MappedArray, self).__irshift__(other)
 
+    def __getitem__(self, item):
+        output = super(MappedArray, self).__getitem__(item)
+        if isinstance(output, MappedArray):
+            output.dirty = self.dirty
+        return output
+
+    def __getslice__(self, i, j):
+        output = super(MappedArray, self).__getslice__(i, j)
+        if isinstance(output, MappedArray):
+            output.dirty = self.dirty
+        return output
