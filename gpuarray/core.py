@@ -26,7 +26,7 @@ class MappedArray(np.ndarray):
         return arr.__array_interface__['data']
 
     def __allocate_buffer(self, device=get_gpu()):
-        queue = self.__get_queue(device)
+        queue = self.get_queue(device)
         self.__buffers[device.value], evt = pycl.buffer_from_ndarray(queue, self, self.get_buffer(device))
         return evt
 
@@ -53,7 +53,7 @@ class MappedArray(np.ndarray):
             self.dirty[device] = dirty
 
     @classmethod
-    def __get_queue(cls, device=get_gpu()):
+    def get_queue(cls, device=get_gpu()):
         if device.value in cls.queues:
             return cls.queues[device.value]
         else:
@@ -64,7 +64,6 @@ class MappedArray(np.ndarray):
 
     def device_to_gpu(self, device=get_gpu(), wait=True):
         if self.__copied(device) and not self.__is_dirty(device):
-            # print("Skipping copy")
             return
         evt = self.__allocate_buffer(device)
         if wait:
@@ -79,7 +78,7 @@ class MappedArray(np.ndarray):
     def gpu_to_device(self, device=get_gpu(), wait=True):
         if not self.__is_dirty("host"):
             return
-        _, evt = pycl.buffer_to_ndarray(self.__get_queue(device), self.__buffers[device.value])
+        _, evt = pycl.buffer_to_ndarray(self.get_queue(device), self.__buffers[device.value], out=self)
         if wait:
             evt.wait()
         else:
