@@ -5,6 +5,7 @@ import ctree
 
 
 def get_gpu():
+    try:
         name = None
         if ctree.CONFIG.has_option("opencl", "gpu"):
             name = ctree.CONFIG.get("opencl", "gpu")
@@ -14,6 +15,9 @@ def get_gpu():
             for gpu in pycl.clGetDeviceIDs():
                 if gpu.name == name:
                     return gpu
+    except pycl.DeviceNotFoundError:
+        return None
+
 
 class MappedArray(np.ndarray):
 
