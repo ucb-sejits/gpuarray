@@ -7,13 +7,18 @@ import ctree
 def get_gpu():
     try:
         name = None
+        gpu_id = None
         if ctree.CONFIG.has_option("opencl", "gpu"):
             name = ctree.CONFIG.get("opencl", "gpu")
+        if ctree.CONFIG.has_option("opencl", "gpu_id"):
+            gpu_id = ctree.CONFIG.get("opencl", "gpu_id")
         if name is None:
             return pycl.clGetDeviceIDs(device_type=pycl.CL_DEVICE_TYPE_GPU)[0]
         else:
             for gpu in pycl.clGetDeviceIDs():
                 if gpu.name == name:
+                    return gpu
+                if gpu.value == gpu_id:
                     return gpu
     except pycl.DeviceNotFoundError:
         return None
