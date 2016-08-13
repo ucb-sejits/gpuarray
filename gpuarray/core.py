@@ -66,9 +66,10 @@ class MappedArray(np.ndarray):
         cls.queues[device.value] = queue
         return queue
 
-    def device_to_gpu(self, device=get_gpu(), wait=True):
-        if self.__copied(device) and not self.__is_dirty(device):
+    def device_to_gpu(self, device=get_gpu(), wait=True, force=False):
+        if self.__copied(device) and not self.__is_dirty(device) and not force:
             return
+        print("DEVICE TO GPU")
         evt = self.__allocate_buffer(device)
         if wait:
             evt.wait()
@@ -79,9 +80,10 @@ class MappedArray(np.ndarray):
         self.__set_copied(device, True)
 
 
-    def gpu_to_device(self, device=get_gpu(), wait=True):
-        if not self.__is_dirty("host"):
+    def gpu_to_device(self, device=get_gpu(), wait=True, force=False):
+        if not self.__is_dirty("host") and not force:
             return
+        print("GPU to DEVICE")
         _, evt = pycl.buffer_to_ndarray(self.get_queue(device), self.__buffers[device.value], out=self)
         if wait:
             evt.wait()
