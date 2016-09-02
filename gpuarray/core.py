@@ -20,7 +20,7 @@ def get_gpu():
                     return gpu
                 if gpu.value == gpu_id:
                     return gpu
-    except pycl.DeviceNotFoundError:
+    except (pycl.DeviceNotFoundError, KeyError):
         return None
 
 
